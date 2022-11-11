@@ -1,0 +1,45 @@
+version: "3.9"
+services:
+
+  api-server:
+    build:
+      context: .
+      dockerfile: servers/api-server/Dockerfile
+
+  vm-manager:
+    build:
+      context: .
+      dockerfile: servers/vm-manager/Dockerfile
+
+  pipeline-manager:
+    build:
+      context: .
+      dockerfile: workers/pipeline-manager/Dockerfile
+
+  pubsub-server:
+    build:
+      context: .
+      dockerfile: servers/pubsub/Dockerfile
+
+  preprocessing:
+    image: eu.gcr.io/sobolt-plantfellow/flex.pipeline.preprocessing:${VERSION_TAG}
+    build:
+      context: .
+      dockerfile: workers/preprocessing/Dockerfile.prod
+
+  segmentation:
+    image: eu.gcr.io/sobolt-plantfellow/flex.pipeline.segmentation:${VERSION_TAG}
+    build:
+      context: .
+      dockerfile: workers/segmentation/Dockerfile
+
+  measuring:
+    image: eu.gcr.io/sobolt-plantfellow/flex.pipeline.measuring:${VERSION_TAG}
+    build:
+      context: .
+      dockerfile: workers/measuring/Dockerfile.prod
+
+  uploading:
+    build:
+      context: .
+      dockerfile: workers/uploading/Dockerfile.prod

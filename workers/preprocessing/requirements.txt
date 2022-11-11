@@ -1,0 +1,16 @@
+scikit-image==0.19.2
+lazperf
+pylas==0.3.4
+open3d==0.13.0
+
+# For celery worker
+celery[redis]==5.1.2
+# latest version of libmetadata has deprecated the ENTRYPOINT object which is a problem.
+# hence install older version
+importlib-metadata==4.13.0
+
+# FOR watchmedo
+watchdog==2.0.2
+argh==0.26.2
+pyyaml==5.4.1
+pydantic==1.10.2

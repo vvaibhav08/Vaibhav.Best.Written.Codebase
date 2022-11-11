@@ -1,0 +1,48 @@
+# Dockerfile runs from root, give absolute path to dockerfile
+
+
+# Copy las_handler from utils to current directory
+
+# Copy average historgram (needed for color normalization)
+
+FROM eu.gcr.io/sobolt-plantfellow/ubuntu18.04-python3.7-cvkit:latest
+
+# FROM python:3.8-slim-buster
+
+# RUN add-apt-repository ppa:ubuntu-toolchain-r/test
+
+RUN apt-get update && apt-get install -y --fix-missing --no-install-recommends \
+    wget \
+    sudo \
+    unzip
+    # libc6 \
+    # libgcc \
+    # libgdal \
+    # libjpeg
+
+# RUN wget https://github.com/roboception/cvkit/releases/download/v2.3.7/cvkit_2.3.7-1.focal_amd64.deb
+
+
+
+# RUN dpkg -i cvkit_2.3.7-1.focal_amd64.deb
+# RUN apt install -f
+
+# RUN sudo apt install -y ./cvkit_2.3.7-1.focal_amd64.deb --fix-broken
+
+# RUN wget https://github.com/roboception/cvkit/archive/refs/tags/v2.3.7.tar.gz
+
+# RUN unzip ./v2.3.7.tar.gz -d cvkit
+
+# RUN mkdir ./cvkit/build && cd ./cvkit/build && cmake .. && make && make install
+
+COPY ./workers/preprocessing/requirements.txt /tmp
+
+RUN pip install --no-cache-dir --upgrade -r /tmp/requirements.txt
+
+# COPY ./histograms/average_color.las
+
+# Copy repo
+COPY ./workers/preprocessing/src /app
+WORKDIR /app
+
+# add an ENTRYPOINT

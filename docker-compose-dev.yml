@@ -1,0 +1,154 @@
+version: "3.2"
+services:
+
+  api-server:
+    image: api-server-dev
+    container_name: apiserver-dev
+    build:
+      context: .
+      dockerfile: servers/api-server/Dockerfile
+    ports:
+      - ${API_SERVER_PORT}:80
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./servers/api-server/src:/app
+    env_file:
+      - .env
+    command: /start-reload.sh
+
+  redis:
+    image: redis
+    restart: always
+    ports:
+      - 6379:6379
+
+  pubsub-server-listener:
+    image: pubsub-server-listener-dev
+    container_name: pubsub-listener-dev
+    build:
+      context: .
+      dockerfile: servers/pubsub/Dockerfile
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./servers/pubsub/src:/app
+    env_file:
+      - .env
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=listener.py --recursive -- python -u listener.py
+
+  pubsub-server-publisher:
+    image: pubsub-server-publisher-dev
+    container_name: pubsub-publisher-dev
+    build:
+      context: .
+      dockerfile: servers/pubsub/Dockerfile
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./servers/pubsub/src:/app
+    env_file:
+      - .env
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=publisher.py --recursive -- python -u publisher.py
+
+  pipeline-manager:
+    image: pipelinemanager-dev
+    container_name: pipeline-manager-dev
+    build:
+      context: .
+      dockerfile: workers/pipeline-manager/Dockerfile
+    depends_on:
+      - redis
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./workers/pipeline-manager/src:/app
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- celery -A worker.app worker --hostname=pipeline-manager-worker@%h -c 200 -Ofair --loglevel=info -Q "pipeline-manager" --uid=nobody --gid=nogroup
+
+  vm-manager:
+    image: vmamanger-dev
+    container_name: vm-manager-dev
+    build:
+      context: .
+      dockerfile: servers/vm-manager/Dockerfile
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./servers/vm-manager/src:/app
+      - ~/.config/gcloud:/root/config/gcloud
+    depends_on:
+      - redis
+    profiles:
+      - external_dev
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- python -u manage_vms.py
+
+  preprocessing:
+    image: preprocessing-dev
+    container_name: preprocessing-dev
+    build:
+      context: .
+      dockerfile: workers/preprocessing/Dockerfile.dev
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./workers/preprocessing/src:/app
+    profiles:
+      - local_dev
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- celery -A worker.app worker --hostname=preprocessing-worker@%h -c 1 -Ofair --loglevel=info -Q "preprocessing" --uid=nobody --gid=nogroup
+
+  segmentation:
+    image: segmentation-dev
+    container_name: segmentation-dev
+    build:
+      context: .
+      dockerfile: workers/segmentation/Dockerfile
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - local_dev # replace it with external_dev if you want to skip and do not have a gpu
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- celery -A worker.app worker --hostname=segmentation-worker-1@%h -c 1 --pool=solo -Ofair --loglevel=info -Q "segmentation" --uid=nobody --gid=nogroup
+
+  measuring:
+    image: measuring-dev
+    container_name: measuring-dev
+    build:
+      context: .
+      dockerfile: workers/measuring/Dockerfile.dev
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./workers/measuring/src:/app
+    profiles:
+      - local_dev
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- celery -A worker.app worker --hostname=measuring-worker@%h -c 1 -Ofair --loglevel=info -Q "measuring" --uid=nobody --gid=nogroup
+
+  uploading:
+    image: uploading-dev
+    container_name: uploading-dev
+    build:
+      context: .
+      dockerfile: workers/uploading/Dockerfile.dev
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ${PIPELINE_OUTPUT_FOLDER}:${PIPELINE_OUTPUT_FOLDER}
+      - ./workers/uploading/src:/app
+    profiles:
+      - local_dev
+    entrypoint: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- celery -A worker.app worker --hostname=uploading-worker@%h -c 1 -Ofair --loglevel=info -Q "uploading" --uid=nobody --gid=nogroup

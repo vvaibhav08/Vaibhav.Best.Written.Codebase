@@ -1,0 +1,176 @@
+definitions:
+  services:
+    docker:
+      memory: 4096
+
+  steps:
+    - step: &Pre-commit
+        name: '"Pre-commit" static analysis'
+        image: python:3.7
+        script:
+          - pip install pre-commit
+          - pre-commit --version
+          - pre-commit run --all-files
+        caches:
+          - pip
+
+    - step: &MyPy
+        name: 'MyPy static analysis + Unit tests'
+        image: docker/compose:1.29.2
+        size: 2x
+        script:
+          - apk add --no-cache bash
+          # - bash run-tests.sh
+        services:
+          - docker
+
+    - step: &BuildAndPush
+        name: 'Build and push'
+        image: docker/compose:1.29.2
+        size: 2x
+        script:
+          # Installing needed software
+          - apk add --update python3 curl which bash git
+          - curl -sSL https://sdk.cloud.google.com > gcloud-install.sh
+          - bash gcloud-install.sh --disable-prompts --install-dir=/opt
+          # Check if expected environment settings are set
+          - if [[ -z "$VERSION_TAG" ]]; then export VERSION_TAG=`git tag --points-at HEAD | sed 's/.*\///'`; fi
+          - if [[ -z "$VERSION_TAG" && `git rev-parse --abbrev-ref HEAD` == "dev" ]]; then export VERSION_TAG=test; fi
+          - echo "$VERSION_TAG"; test "$VERSION_TAG"
+          - echo "$GCR_KEY"; test "$GCR_KEY"
+          - echo "$GCR_PROJECT"; test "$GCR_PROJECT"
+          # Authenticating
+          - echo $GCR_KEY > ./gcloud-api-key.json
+          - /opt/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file ./gcloud-api-key.json
+          - /opt/google-cloud-sdk/bin/gcloud config set project $GCR_PROJECT
+          - cat ./gcloud-api-key.json | docker login -u _json_key --password-stdin https://eu.gcr.io
+          # Build and push
+          - cp template.env .env
+          - VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose-build.yml -f docker-compose.yml build
+          - VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose-build.yml -f docker-compose.yml push
+        services:
+          - docker
+
+    - step: &BuildAndPushLatest
+        name: 'Build and push'
+        image: docker/compose:1.29.2
+        size: 2x
+        script:
+          # Installing needed software
+          - apk add --update python3 curl which bash git
+          - curl -sSL https://sdk.cloud.google.com > gcloud-install.sh
+          - bash gcloud-install.sh --disable-prompts --install-dir=/opt
+          # Check if expected environment settings are set
+          - if [[ -z "$VERSION_TAG" ]]; then export VERSION_TAG=`git tag --points-at HEAD | sed 's/.*\///'`; fi
+          - if [[ -z "$VERSION_TAG" && `git rev-parse --abbrev-ref HEAD` == "dev" ]]; then export VERSION_TAG=test; fi
+          - echo "$VERSION_TAG"; test "$VERSION_TAG"
+          - echo "$GCR_KEY"; test "$GCR_KEY"
+          - echo "$GCR_PROJECT"; test "$GCR_PROJECT"
+          # Authenticating
+          - echo $GCR_KEY > ./gcloud-api-key.json
+          - /opt/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file ./gcloud-api-key.json
+          - /opt/google-cloud-sdk/bin/gcloud config set project $GCR_PROJECT
+          - cat ./gcloud-api-key.json | docker login -u _json_key --password-stdin https://eu.gcr.io
+          # Build and push
+          - cp template.env .env
+          - VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose-build.yml -f docker-compose.yml build
+          - VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose-build.yml -f docker-compose.yml push
+          - VERSION_TAG=latest docker-compose -f docker-compose-build.yml -f docker-compose.yml build
+          - VERSION_TAG=latest docker-compose -f docker-compose-build.yml -f docker-compose.yml push
+        services:
+          - docker
+
+    - step:
+        name: 'Deploy the analysis pipeline'
+        image: google/cloud-sdk:373.0.0-alpine
+        script: &Deploy
+          # Getting and testing the environment vars for correct contents
+          - if [[ -z "$VERSION_TAG" ]]; then export VERSION_TAG=`git tag --points-at HEAD | sed 's/.*\///'`; fi
+          - if [[ -z "$VERSION_TAG" && `git rev-parse --abbrev-ref HEAD` == "dev" ]]; then export VERSION_TAG=test; fi
+          - echo "$VERSION_TAG"; test "$VERSION_TAG"
+          - echo "$GCR_KEY"; test "$GCR_KEY"
+          - echo "TARGET_HOST"; test "$TARGET_HOST"
+          # Authenticating
+          - chmod 600 ~/.ssh/config; echo -e "\nHost $TARGET_HOST\n\tStrictHostKeyChecking no" >> ~/.ssh/config; chmod 400 ~/.ssh/config
+          - echo $GCR_KEY > ./gcloud-api-key.json
+          - scp ./gcloud-api-key.json root@$TARGET_HOST:/opt/gcloud-api-key.json
+          # Deploying
+          - scp docker-compose.yml root@$TARGET_HOST:/opt/docker-compose.yml
+          - ssh root@$TARGET_HOST "cd /opt
+              && chmod 600 ./gcloud-api-key.json
+              && gcloud auth activate-service-account --key-file ./gcloud-api-key.json
+              && cat ./gcloud-api-key.json | docker login -u _json_key --password-stdin https://gcr.io
+              && gcloud auth configure-docker --quiet
+              && VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose.yml pull
+              && VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose.yml down -v --remove-orphans
+              && VERSION_TAG=$VERSION_TAG docker-compose -f docker-compose.yml up -d --no-build
+              && (docker rmi \$(docker images -q -a) || true)"
+
+# enables download for large files
+clone:
+  lfs: true
+
+pipelines:
+  default:
+    - step: *Pre-commit
+
+  custom:
+    # DeployTest:
+    #   - variables:
+    #       - name: VERSION_TAG
+    #   - step: &DeployTest
+    #       name: Deploying (test)
+    #       image: google/cloud-sdk:373.0.0-alpine
+    #       script: *Deploy
+    #       deployment: Test
+    DeployAccept:
+      - variables:
+          - name: VERSION_TAG
+      - step: &DeployAccept
+          name: Deploying (accept)
+          image: google/cloud-sdk:373.0.0-alpine
+          script: *Deploy
+          deployment: Staging
+    # DeployProduction:
+    #   - variables:
+    #       - name: VERSION_TAG
+    #   - step: &DeployProduction
+    #       name: Deploying (production)
+    #       image: google/cloud-sdk:373.0.0-alpine
+    #       script: *Deploy
+    #       deployment: Production
+    BuildPush:
+      - variables:
+          - name: VERSION_TAG
+      - step: *BuildAndPush
+
+  pull-requests:
+    '*/*':
+      - step: *Pre-commit
+      - step: *MyPy
+
+  branches:
+    "dev":
+      - step: *Pre-commit
+      - step: *MyPy
+      - step: *BuildAndPush
+      # - step: *DeployTest # Uncomment this step once the Test environment is setup and the deploy step in bitbucket pipeline is implemented (Mees Froberg)
+
+  tags:
+    "release/**rc*":
+      - step: *Pre-commit
+      - step: *MyPy
+      - step: *BuildAndPush
+      - step: *DeployAccept
+
+    "candidate/**":
+      - step: *Pre-commit
+      - step: *MyPy
+      - step: *BuildAndPush
+      - step: *DeployAccept
+
+    "release/**":
+      - step: *Pre-commit
+      - step: *MyPy
+      - step: *BuildAndPushLatest
+      - step: *DeployAccept # Uncomment this step once the Production environment is setup and the deploy step in bitbucket pipeline is implemented (Mees Froberg)

@@ -1,0 +1,64 @@
+# This file specifies the VM configurations
+# First we define a default machine
+
+#####################################
+############## DEFAULT ##############
+#####################################
+# These default settings are the base
+# settings of all the VMs. Values here
+# can be overwritten by setting them
+# differently in the "actual" section.
+DEFAULT:
+    - name : 'default-machine-01'
+      min_nr_jobs : 0
+      zone : 'europe-west1-b'
+      machinetype : 'n1-standard-4'
+      source_disk_image : 'https://www.googleapis.com/compute/v1/projects/sobolt-plantfellow/global/images/pf-flex-celery-worker-accept-01'
+      service_account_email : 'pf-flex-pipeline-orchestrator@sobolt-plantfellow.iam.gserviceaccount.com' # TODO: creat & replace (V Vaidya)
+      access_scopes :
+        - 'https://www.googleapis.com/auth/cloud-platform' # Gives access to ALL access scopes!
+      gpu_type : null
+      gpu_count : 0
+      network : 'https://www.googleapis.com/compute/v1/projects/sobolt-plantfellow/global/networks/default' # TODO: replace (V Vaidya)
+      preemptible : False
+      labels:
+        project: flex
+        admin: mfroberg
+        owner: test
+        pilot: jvanderauweraert
+      concurrency : 1
+      startup_script_file : 'startup_script_default.sh'
+      wait_time_before_shutdown: 10  # in minutes
+
+
+# The following machines are the actual
+# ones that get created. They derive
+# from the default machine defined above.
+#####################################
+############## ACTUAL ###############
+#####################################
+
+preprocessing:
+    - name : 'flex-pipeline-preprocessing-worker-01'
+      min_nr_jobs : 0
+      concurrency : 1
+      machinetype : 'n1-standard-8'
+      docker_url : 'eu.gcr.io/sobolt-plantfellow/flex.pipeline.preprocessing:latest'
+
+segmentation:
+    - name : 'flex-pipeline-segmentation-worker-01'
+      min_nr_jobs : 0
+      concurrency : 1
+      machinetype : 'n1-standard-8'
+      gpu_type : 't4' # only this gpu type will work since the disk image contains t4 drivers
+      gpu_count : 1
+      docker_url : 'eu.gcr.io/sobolt-plantfellow/flex.pipeline.segmentation:latest'
+      startup_script_file : 'startup_script_gpu.sh' # a different startup script for this worker since docker container starts with --gpu all
+      source_disk_image: 'https://www.googleapis.com/compute/v1/projects/sobolt-plantfellow/global/images/pf-flex-celery-gpu-worker-accept-01' # diffenent image is needed for segmentation
+
+measuring:
+    - name : 'flex-pipeline-measuring-worker-01'
+      min_nr_jobs : 0
+      concurrency : 1
+      machinetype : 'n1-highmem-64'
+      docker_url : 'eu.gcr.io/sobolt-plantfellow/flex.pipeline.measuring:latest'

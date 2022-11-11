@@ -1,0 +1,7 @@
+firebase-admin==4.3.0
+numpy==1.19.1
+python-multipart==0.0.5
+google-cloud-pubsub==2.1.0
+tqdm==4.50.0
+aiofiles==0.6.0
+pydantic

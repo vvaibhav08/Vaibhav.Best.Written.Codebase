@@ -1,0 +1,7 @@
+# For celery worker
+celery[redis]==5.1.2
+
+# FOR watchmedo
+watchdog==2.0.2
+argh==0.26.2
+pyyaml==5.4.1

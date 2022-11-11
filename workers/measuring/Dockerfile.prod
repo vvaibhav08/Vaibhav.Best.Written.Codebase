@@ -1,0 +1,23 @@
+FROM python:3.8-slim-buster
+
+RUN apt-get update && apt-get install -y --fix-missing --no-install-recommends \
+  libusb-1.0-0 \
+  libgl1-mesa-glx \
+  libspatialindex-dev \
+  libglib2.0-0 \
+  libgomp1 \
+  libxrender1 \
+  watch
+
+COPY ./workers/measuring/requirements.txt /tmp
+COPY ./workers/measuring/tests/test.requirements.txt /tmp
+
+RUN pip install --no-cache-dir --upgrade -r /tmp/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /tmp/test.requirements.txt
+
+# Copy repo
+COPY ./workers/measuring/src /app
+
+WORKDIR /app
+
+# add an ENTRYPOINT
